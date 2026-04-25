@@ -29,6 +29,7 @@ func init() {
 	commitCmd.Flags().BoolVarP(&commitNoLoadingFlag, "no-loading", "q", false, "Disable loading UI")
 	commitCmd.Flags().BoolVarP(&commitStagedOnlyFlag, "staged-only", "s", false, "Use only already staged files")
 	commitCmd.Flags().BoolVarP(&commitSilentEmptyFlag, "silent-empty", "n", false, "Stay silent when there are no staged changes")
+	commitCmd.Flags().BoolVarP(&commitDebugFlag, "debug", "d", false, "Show debug diagnostics")
 }
 
 var (
@@ -40,6 +41,7 @@ var (
 	commitNoLoadingFlag   bool
 	commitStagedOnlyFlag  bool
 	commitSilentEmptyFlag bool
+	commitDebugFlag       bool
 )
 
 var commitCmd = &cobra.Command{
@@ -60,6 +62,9 @@ var commitCmd = &cobra.Command{
 		if diff == "" {
 			if !commitSilentEmptyFlag {
 				fmt.Println("No staged changes to commit.")
+			}
+			if commitDebugFlag {
+				fmt.Fprintln(os.Stderr, "debug: staged diff is empty")
 			}
 			return
 		}
@@ -113,6 +118,17 @@ var commitCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		if commitDebugFlag {
+			fmt.Fprintf(os.Stderr, "debug: provider=%s model=%s generate=%d lang=%q message_only=%t no_loading=%t staged_only=%t silent_empty=%t\n",
+				providerName, model, generateCount, commitLanguageFlag, commitMessageOnlyFlag, commitNoLoadingFlag, commitStagedOnlyFlag, commitSilentEmptyFlag)
+			fmt.Fprintf(os.Stderr, "debug: diff_bytes=%d endpoint=%q\n", len(diff), endpoint)
+			preview := diff
+			if len(preview) > 400 {
+				preview = preview[:400]
+			}
+			fmt.Fprintf(os.Stderr, "debug: diff_preview=%q\n", preview)
+		}
+
 		provider.SetRuntimeCommitPromptOptions(provider.CommitPromptOptions{
 			Generate: generateCount,
 			Language: strings.TrimSpace(commitLanguageFlag),
@@ -148,6 +164,10 @@ var commitCmd = &cobra.Command{
 
 		if generateCount > 0 && len(commitMessages) > generateCount {
 			commitMessages = commitMessages[:generateCount]
+		}
+
+		if commitDebugFlag {
+			fmt.Fprintf(os.Stderr, "debug: generated_messages=%d\n", len(commitMessages))
 		}
 
 		if commitMessageOnlyFlag {
