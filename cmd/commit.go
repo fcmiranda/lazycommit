@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/m7medvision/lazycommit/internal/config"
 	"github.com/m7medvision/lazycommit/internal/git"
@@ -19,12 +20,36 @@ type CommitProvider interface {
 
 func init() {
 	RootCmd.AddCommand(commitCmd)
+
+	commitCmd.Flags().StringVarP(&commitProviderFlag, "provider", "p", "", "Provider override: opencode, openai, copilot, anthropic, gemini")
+	commitCmd.Flags().StringVarP(&commitModelFlag, "model", "m", "", "Model override for selected provider")
+	commitCmd.Flags().IntVarP(&commitGenerateFlag, "generate", "g", 0, "Number of commit message suggestions to generate")
+	commitCmd.Flags().StringVarP(&commitLanguageFlag, "lang", "l", "", "Language override for generated commit messages")
+	commitCmd.Flags().BoolVarP(&commitMessageOnlyFlag, "message-only", "o", false, "Print only the first generated message")
+	commitCmd.Flags().BoolVarP(&commitNoLoadingFlag, "no-loading", "q", false, "Disable loading UI")
+	commitCmd.Flags().BoolVarP(&commitStagedOnlyFlag, "staged-only", "s", false, "Use only already staged files")
+	commitCmd.Flags().BoolVarP(&commitSilentEmptyFlag, "silent-empty", "n", false, "Stay silent when there are no staged changes")
 }
+
+var (
+	commitProviderFlag    string
+	commitModelFlag       string
+	commitGenerateFlag    int
+	commitLanguageFlag    string
+	commitMessageOnlyFlag bool
+	commitNoLoadingFlag   bool
+	commitStagedOnlyFlag  bool
+	commitSilentEmptyFlag bool
+)
 
 var commitCmd = &cobra.Command{
 	Use:   "commit",
 	Short: "Generate commit message suggestions",
-	Long:  `Analyzes your staged changes and generates a list of 10 conventional commit message suggestions.`,
+	Long:  `Analyzes your staged changes and generates conventional commit message suggestions.`,
+	Example: `  lazycommit commit
+  lazycommit commit -p opencode -m opencode/minimax-m2.5-free
+  lazycommit commit -g 3 -l Spanish
+  lazycommit commit -o`,
 	Run: func(cmd *cobra.Command, args []string) {
 		diff, err := git.GetStagedDiff()
 		if err != nil {
@@ -33,13 +58,31 @@ var commitCmd = &cobra.Command{
 		}
 
 		if diff == "" {
-			fmt.Println("No staged changes to commit.")
+			if !commitSilentEmptyFlag {
+				fmt.Println("No staged changes to commit.")
+			}
 			return
+		}
+
+		providerName := strings.TrimSpace(config.GetProvider())
+		if strings.TrimSpace(commitProviderFlag) != "" {
+			providerName = strings.TrimSpace(commitProviderFlag)
+		}
+
+		if providerName == "" {
+			fmt.Fprintln(os.Stderr, "Provider is empty. Set one with 'lazycommit config set' or use --provider.")
+			os.Exit(1)
 		}
 
 		var aiProvider CommitProvider
 
-		providerName := config.GetProvider()
+		generateCount := commitGenerateFlag
+		if generateCount <= 0 {
+			generateCount = config.GetNumSuggestions()
+		}
+		if generateCount <= 0 {
+			generateCount = 10
+		}
 
 		// API keys are not needed for CLI-backed providers.
 		var apiKey string
@@ -53,7 +96,9 @@ var commitCmd = &cobra.Command{
 		}
 
 		var model string
-		if providerName == "copilot" || providerName == "openai" || providerName == "anthropic" || providerName == "gemini" || providerName == "opencode" {
+		if strings.TrimSpace(commitModelFlag) != "" {
+			model = strings.TrimSpace(commitModelFlag)
+		} else if providerName == "copilot" || providerName == "openai" || providerName == "anthropic" || providerName == "gemini" || providerName == "opencode" {
 			var err error
 			model, err = config.GetModel()
 			if err != nil {
@@ -68,33 +113,26 @@ var commitCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
+		provider.SetRuntimeCommitPromptOptions(provider.CommitPromptOptions{
+			Generate: generateCount,
+			Language: strings.TrimSpace(commitLanguageFlag),
+		})
+		defer provider.ResetRuntimeCommitPromptOptions()
+
 		switch providerName {
 		case "copilot":
 			aiProvider = provider.NewCopilotProviderWithModel(apiKey, model, endpoint)
 		case "openai":
 			aiProvider = provider.NewOpenAIProvider(apiKey, model, endpoint)
 		case "anthropic":
-			// Get num_suggestions from config (default to 10)
-			numSuggestions := config.GetNumSuggestions()
-			if numSuggestions <= 0 {
-				numSuggestions = 10
-			}
-			aiProvider = provider.NewAnthropicProvider(model, numSuggestions)
+			aiProvider = provider.NewAnthropicProvider(model, generateCount)
 		case "gemini":
-			numSuggestions := config.GetNumSuggestions()
-			if numSuggestions <= 0 {
-				numSuggestions = 10
-			}
-			aiProvider = provider.NewGeminiProvider(model, numSuggestions)
+			aiProvider = provider.NewGeminiProvider(model, generateCount)
 		case "opencode":
-			numSuggestions := config.GetNumSuggestions()
-			if numSuggestions <= 0 {
-				numSuggestions = 10
-			}
-			aiProvider = provider.NewOpencodeProvider(model, config.GetFallbackModels(), numSuggestions)
+			aiProvider = provider.NewOpencodeProvider(model, config.GetFallbackModels(), generateCount)
 		default:
-			// Default to copilot if provider is not set or unknown
-			aiProvider = provider.NewCopilotProvider(apiKey, endpoint)
+			fmt.Fprintf(os.Stderr, "Unsupported provider: %s\n", providerName)
+			os.Exit(1)
 		}
 
 		commitMessages, err := aiProvider.GenerateCommitMessages(context.Background(), diff)
@@ -105,6 +143,15 @@ var commitCmd = &cobra.Command{
 
 		if len(commitMessages) == 0 {
 			fmt.Println("No commit messages generated.")
+			return
+		}
+
+		if generateCount > 0 && len(commitMessages) > generateCount {
+			commitMessages = commitMessages[:generateCount]
+		}
+
+		if commitMessageOnlyFlag {
+			fmt.Println(commitMessages[0])
 			return
 		}
 
