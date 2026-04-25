@@ -87,6 +87,11 @@ lazycommit commit -q
 
 # debug mode (prints provider/model/diff diagnostics)
 lazycommit commit -d
+
+# stage all files first, then generate 3 suggestions with emoji
+lazycommit commit --stage-all -g 3 -e
+
+
 ```
 
 Generate PR titles against `main` branch:
