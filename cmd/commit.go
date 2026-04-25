@@ -24,6 +24,7 @@ func init() {
 
 	commitCmd.Flags().StringVarP(&commitProviderFlag, "provider", "p", "", "Provider override: opencode, openai, copilot, anthropic, gemini")
 	commitCmd.Flags().StringVarP(&commitModelFlag, "model", "m", "", "Model override for selected provider")
+	commitCmd.Flags().StringVar(&commitFallbackModelsFlag, "fallback-models", "", "Comma-separated fallback models (opencode only)")
 	commitCmd.Flags().IntVarP(&commitGenerateFlag, "generate", "g", 0, "Number of commit message suggestions to generate")
 	commitCmd.Flags().StringVarP(&commitLanguageFlag, "lang", "l", "", "Language override for generated commit messages")
 	commitCmd.Flags().BoolVarP(&commitEmojiFlag, "emoji", "e", false, "Prefix generated commit messages with gitmoji")
@@ -36,17 +37,18 @@ func init() {
 }
 
 var (
-	commitProviderFlag    string
-	commitModelFlag       string
-	commitGenerateFlag    int
-	commitLanguageFlag    string
-	commitEmojiFlag       bool
-	commitMessageOnlyFlag bool
-	commitNoLoadingFlag   bool
-	commitStageAllFlag    bool
-	commitStagedOnlyFlag  bool
-	commitSilentEmptyFlag bool
-	commitDebugFlag       bool
+	commitProviderFlag       string
+	commitModelFlag          string
+	commitFallbackModelsFlag string
+	commitGenerateFlag       int
+	commitLanguageFlag       string
+	commitEmojiFlag          bool
+	commitMessageOnlyFlag    bool
+	commitNoLoadingFlag      bool
+	commitStageAllFlag       bool
+	commitStagedOnlyFlag     bool
+	commitSilentEmptyFlag    bool
+	commitDebugFlag          bool
 )
 
 var commitCmd = &cobra.Command{
@@ -56,6 +58,7 @@ var commitCmd = &cobra.Command{
 	Example: `  lazycommit commit
   lazycommit commit --stage-all
   lazycommit commit -p opencode -m opencode/minimax-m2.5-free
+  lazycommit commit -p opencode --fallback-models opencode/minimax-m2.5-free,opencode/ling-2.6-flash-free
   lazycommit commit -g 3 -l Spanish
   lazycommit commit -o`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -151,8 +154,8 @@ var commitCmd = &cobra.Command{
 		}
 
 		if commitDebugFlag {
-			fmt.Fprintf(os.Stderr, "debug: provider=%s model=%s generate=%d lang=%q emoji=%t message_only=%t no_loading=%t staged_only=%t silent_empty=%t\n",
-				providerName, model, generateCount, commitLanguageFlag, commitEmojiFlag, commitMessageOnlyFlag, commitNoLoadingFlag, commitStagedOnlyFlag, commitSilentEmptyFlag)
+			fmt.Fprintf(os.Stderr, "debug: provider=%s model=%s fallback_models=%q generate=%d lang=%q emoji=%t message_only=%t no_loading=%t staged_only=%t silent_empty=%t\n",
+				providerName, model, commitFallbackModelsFlag, generateCount, commitLanguageFlag, commitEmojiFlag, commitMessageOnlyFlag, commitNoLoadingFlag, commitStagedOnlyFlag, commitSilentEmptyFlag)
 			fmt.Fprintf(os.Stderr, "debug: stage_all=%t\n", commitStageAllFlag)
 			fmt.Fprintf(os.Stderr, "debug: diff_bytes=%d endpoint=%q\n", len(diff), endpoint)
 			preview := diff
@@ -179,7 +182,11 @@ var commitCmd = &cobra.Command{
 		case "gemini":
 			aiProvider = provider.NewGeminiProvider(model, generateCount)
 		case "opencode":
-			aiProvider = provider.NewOpencodeProvider(model, config.GetFallbackModels(), generateCount)
+			fallbackModels := config.GetFallbackModels()
+			if strings.TrimSpace(commitFallbackModelsFlag) != "" {
+				fallbackModels = parseCommaSeparatedModels(commitFallbackModelsFlag)
+			}
+			aiProvider = provider.NewOpencodeProvider(model, fallbackModels, generateCount)
 		default:
 			fmt.Fprintf(os.Stderr, "Unsupported provider: %s\n", providerName)
 			os.Exit(1)
@@ -227,4 +234,17 @@ var commitCmd = &cobra.Command{
 			fmt.Println(msg)
 		}
 	},
+}
+
+func parseCommaSeparatedModels(raw string) []string {
+	parts := strings.Split(raw, ",")
+	models := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		models = append(models, trimmed)
+	}
+	return models
 }
