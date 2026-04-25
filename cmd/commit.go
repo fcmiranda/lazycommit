@@ -29,6 +29,7 @@ func init() {
 	commitCmd.Flags().BoolVarP(&commitEmojiFlag, "emoji", "e", false, "Prefix generated commit messages with gitmoji")
 	commitCmd.Flags().BoolVarP(&commitMessageOnlyFlag, "message-only", "o", false, "Print only the first generated message")
 	commitCmd.Flags().BoolVarP(&commitNoLoadingFlag, "no-loading", "q", false, "Disable loading UI")
+	commitCmd.Flags().BoolVar(&commitStageAllFlag, "stage-all", false, "Stage all changes before generating commit messages")
 	commitCmd.Flags().BoolVarP(&commitStagedOnlyFlag, "staged-only", "s", false, "Use only already staged files")
 	commitCmd.Flags().BoolVarP(&commitSilentEmptyFlag, "silent-empty", "n", false, "Stay silent when there are no staged changes")
 	commitCmd.Flags().BoolVarP(&commitDebugFlag, "debug", "d", false, "Show debug diagnostics")
@@ -42,6 +43,7 @@ var (
 	commitEmojiFlag       bool
 	commitMessageOnlyFlag bool
 	commitNoLoadingFlag   bool
+	commitStageAllFlag    bool
 	commitStagedOnlyFlag  bool
 	commitSilentEmptyFlag bool
 	commitDebugFlag       bool
@@ -52,10 +54,37 @@ var commitCmd = &cobra.Command{
 	Short: "Generate commit message suggestions",
 	Long:  `Analyzes your staged changes and generates conventional commit message suggestions.`,
 	Example: `  lazycommit commit
+  lazycommit commit --stage-all
   lazycommit commit -p opencode -m opencode/minimax-m2.5-free
   lazycommit commit -g 3 -l Spanish
   lazycommit commit -o`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if commitStageAllFlag && commitStagedOnlyFlag {
+			fmt.Fprintln(os.Stderr, "Cannot use --stage-all and --staged-only together.")
+			os.Exit(1)
+		}
+
+		if commitStageAllFlag {
+			hasChanges, err := git.HasChanges()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error checking git status: %v\n", err)
+				os.Exit(1)
+			}
+			if !hasChanges {
+				if !commitSilentEmptyFlag {
+					fmt.Println("No changes to stage.")
+				}
+				return
+			}
+			if err := git.StageAll(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error staging changes: %v\n", err)
+				os.Exit(1)
+			}
+			if commitDebugFlag {
+				fmt.Fprintln(os.Stderr, "debug: staged all changes with git add --all")
+			}
+		}
+
 		diff, err := git.GetStagedDiff()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting staged diff: %v\n", err)
@@ -124,6 +153,7 @@ var commitCmd = &cobra.Command{
 		if commitDebugFlag {
 			fmt.Fprintf(os.Stderr, "debug: provider=%s model=%s generate=%d lang=%q emoji=%t message_only=%t no_loading=%t staged_only=%t silent_empty=%t\n",
 				providerName, model, generateCount, commitLanguageFlag, commitEmojiFlag, commitMessageOnlyFlag, commitNoLoadingFlag, commitStagedOnlyFlag, commitSilentEmptyFlag)
+			fmt.Fprintf(os.Stderr, "debug: stage_all=%t\n", commitStageAllFlag)
 			fmt.Fprintf(os.Stderr, "debug: diff_bytes=%d endpoint=%q\n", len(diff), endpoint)
 			preview := diff
 			if len(preview) > 400 {
