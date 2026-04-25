@@ -19,6 +19,12 @@ func GetCommitMessagePrompt(diff string) string {
 	if strings.TrimSpace(opts.Language) != "" {
 		extraRules = append(extraRules, fmt.Sprintf("IMPORTANT: Generate all content in %s.", strings.TrimSpace(opts.Language)))
 	}
+	if opts.Emoji {
+		extraRules = append(extraRules, `Gitmoji rules:
+- Prefix exactly one emoji before commit type.
+- Mapping: feat=✨ fix=🐛 refactor=♻️ perf=⚡️ docs=📝 style=🎨 test=🧪 chore=🔧 ci=👷 build=📦 revert=⏪️ security=🔒️.
+- Format: <emoji> <type>(<scope>): <description>`)
+	}
 
 	if len(extraRules) == 0 {
 		return basePrompt
