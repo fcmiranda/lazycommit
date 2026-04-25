@@ -25,6 +25,7 @@ func init() {
 	commitCmd.Flags().StringVarP(&commitModelFlag, "model", "m", "", "Model override for selected provider")
 	commitCmd.Flags().IntVarP(&commitGenerateFlag, "generate", "g", 0, "Number of commit message suggestions to generate")
 	commitCmd.Flags().StringVarP(&commitLanguageFlag, "lang", "l", "", "Language override for generated commit messages")
+	commitCmd.Flags().BoolVarP(&commitEmojiFlag, "emoji", "e", false, "Prefix generated commit messages with gitmoji")
 	commitCmd.Flags().BoolVarP(&commitMessageOnlyFlag, "message-only", "o", false, "Print only the first generated message")
 	commitCmd.Flags().BoolVarP(&commitNoLoadingFlag, "no-loading", "q", false, "Disable loading UI")
 	commitCmd.Flags().BoolVarP(&commitStagedOnlyFlag, "staged-only", "s", false, "Use only already staged files")
@@ -37,6 +38,7 @@ var (
 	commitModelFlag       string
 	commitGenerateFlag    int
 	commitLanguageFlag    string
+	commitEmojiFlag       bool
 	commitMessageOnlyFlag bool
 	commitNoLoadingFlag   bool
 	commitStagedOnlyFlag  bool
@@ -119,8 +121,8 @@ var commitCmd = &cobra.Command{
 		}
 
 		if commitDebugFlag {
-			fmt.Fprintf(os.Stderr, "debug: provider=%s model=%s generate=%d lang=%q message_only=%t no_loading=%t staged_only=%t silent_empty=%t\n",
-				providerName, model, generateCount, commitLanguageFlag, commitMessageOnlyFlag, commitNoLoadingFlag, commitStagedOnlyFlag, commitSilentEmptyFlag)
+			fmt.Fprintf(os.Stderr, "debug: provider=%s model=%s generate=%d lang=%q emoji=%t message_only=%t no_loading=%t staged_only=%t silent_empty=%t\n",
+				providerName, model, generateCount, commitLanguageFlag, commitEmojiFlag, commitMessageOnlyFlag, commitNoLoadingFlag, commitStagedOnlyFlag, commitSilentEmptyFlag)
 			fmt.Fprintf(os.Stderr, "debug: diff_bytes=%d endpoint=%q\n", len(diff), endpoint)
 			preview := diff
 			if len(preview) > 400 {
@@ -132,6 +134,7 @@ var commitCmd = &cobra.Command{
 		provider.SetRuntimeCommitPromptOptions(provider.CommitPromptOptions{
 			Generate: generateCount,
 			Language: strings.TrimSpace(commitLanguageFlag),
+			Emoji:    commitEmojiFlag,
 		})
 		defer provider.ResetRuntimeCommitPromptOptions()
 
