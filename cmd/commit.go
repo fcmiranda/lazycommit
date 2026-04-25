@@ -9,6 +9,7 @@ import (
 	"github.com/m7medvision/lazycommit/internal/config"
 	"github.com/m7medvision/lazycommit/internal/git"
 	"github.com/m7medvision/lazycommit/internal/provider"
+	"github.com/m7medvision/lazycommit/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -154,10 +155,24 @@ var commitCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		commitMessages, err := aiProvider.GenerateCommitMessages(context.Background(), diff)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating commit messages: %v\n", err)
-			os.Exit(1)
+		var commitMessages []string
+		if commitNoLoadingFlag || commitDebugFlag {
+			commitMessages, err = aiProvider.GenerateCommitMessages(context.Background(), diff)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error generating commit messages: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			commitMessages, err = ui.RunWithSpinner(
+				fmt.Sprintf("Generating commit messages via %s (%s)...", providerName, model),
+				func() ([]string, error) {
+					return aiProvider.GenerateCommitMessages(context.Background(), diff)
+				},
+			)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error generating commit messages: %v\n", err)
+				os.Exit(1)
+			}
 		}
 
 		if len(commitMessages) == 0 {
